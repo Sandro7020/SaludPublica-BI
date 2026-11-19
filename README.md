@@ -1,6 +1,15 @@
 # SaludPublica-BI
 Implementación de solución de BI para el caso de estudio de salud pública. Scripts .sql, datos de prueba, procesos ETL, dashboard con indicadores
 
+## Estructura de la entrega
+| Carpeta | Contenido |
+| --- | --- |
+| /01_oltp | Scripts DDL y de datos de prueba; capturas de la implementación |
+| /02_dwh | Scripts DDL del almacén (staging y modelo dimensional); capturas |
+| /03_etl | Procesos ETL (proyectos, scripts o transformaciones), bitácoras y reporte de calidad |
+| /04_validacion | Consultas de reconciliación y sus resultados |
+| /05_dashboard | Archivo del dashboard (o enlace de acceso) y capturas de cada vista |
+
 ## Descripción del caso y reglas de negocio
 | Código | Regla de negocio |
 | --- | --- |

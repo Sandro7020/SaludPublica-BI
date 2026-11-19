@@ -1,4 +1,8 @@
 -- ============================================================================
+-- OBSOLETO: cargador del esquema anterior a la Fase 1.
+-- No funciona con el DDL extendido (INGRESO, POLIZA, FACTURA, etc.).
+-- Usar en orden: 01_catalogos.sql, 02_maestros.sql y las fases siguientes.
+-- ============================================================================
 -- Datos de prueba para el esquema OLTP (PostgreSQL)
 -- Esquema destino: "OLTP"
 --
