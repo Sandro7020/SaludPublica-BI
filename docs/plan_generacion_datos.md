@@ -1,8 +1,8 @@
 # Plan de generación de datos de prueba
 
-> **Estado:** Fases 1 a 5 completadas (DDL extendido, catálogos/maestros, pólizas, ingresos y servicios cargados). Fases 6 a 8 pendientes.
+> **Estado:** Fases 1 a 8 completadas: DDL extendido, catálogos/maestros, pólizas, ingresos, servicios, facturación, efectos secundarios y validación integral documentada.
 >
-> **Documento relacionado:** [Cambios al OLTP](cambios_oltp.md)
+> **Documentos relacionados:** [Cambios al OLTP](cambios_oltp.md) · [Calidad de datos](calidad_datos.md)
 
 ## 1. Objetivo
 
@@ -173,7 +173,7 @@ Toda generación debe cumplir estas invariantes:
 
 **Criterio de aceptación:** cumplido. El DDL carga sin errores y todas las FKs nuevas son válidas.
 
-> **Nota:** hasta completar las Fases 2 a 7, `oltp/datos_prueba/carga_datos.sql` no es compatible con el DDL nuevo (no envía `NUMBER_INGRESO` y no llena las tablas de facturación). No debe ejecutarse contra este esquema.
+> **Nota:** hasta completar las Fases 2 a 8, `oltp/datos_prueba/carga_datos.sql` no es compatible con el DDL nuevo (no envía `NUMBER_INGRESO` y no llena las tablas de facturación). No debe ejecutarse contra este esquema.
 
 **Detalle:** ver [Cambios al OLTP](cambios_oltp.md).
 
@@ -353,58 +353,108 @@ Toda generación debe cumplir estas invariantes:
 
 **Criterio de aceptación:** cumplido. Hay 120 diagnósticos, 120 prescripciones y 60 intervenciones; todos tienen ingreso válido, fechas dentro de la internación, médico y personal del área, servicios compatibles con la especialidad, la edad y el sexo, y ninguna clave natural duplicada.
 
-### Fase 6 — Facturación
+### Fase 6 — Facturación ✅
+
+**Estado:** completada el 2026-11-21.
 
 **Objetivo:** generar una factura por cada servicio y su seguimiento de cobro.
 
-**Actividades:**
+**Archivos creados:**
 
-- Generar 300 facturas, una por servicio.
-- Fecha de emisión = fecha del servicio.
-- Fecha de vencimiento = emisión + 30 días.
-- Monto total = costo del diagnóstico, tratamiento o intervención.
-- Aplicar la cobertura de la póliza principal; si no cubre, intentar la secundaria.
-- Registrar la aseguradora primaria efectivamente usada.
-- Distribuir estados:
-  - ~60% pagadas, con pago entre 5 y 90 días después de la emisión y `F_PAGO <= 2026-10-31`.
-  - ~25% pendientes: impagas, emitidas entre agosto y octubre de 2026 (cobro reciente).
-  - ~15% vencidas: impagas, emitidas antes de agosto de 2026 (mora mayor a 60 días).
-- Si la fecha de pago calculada cae después del corte, la factura no se marca pagada: queda pendiente.
-- Asegurar que las facturas pagadas tengan fecha y monto de pago.
+- `oltp/datos_prueba/06_facturacion.sql`
+- `oltp/datos_prueba/generar_datos.py` (extendido con la Fase 6)
 
-**Salida:** `FACTURA` y `FACTURA_DETALLE` cargadas.
+**Actividades realizadas:**
 
-**Criterio de aceptación:** ≥200 facturas; una factura por servicio; `MONTO_CUBIERTO + MONTO_PACIENTE = MONTO_TOTAL`; las pagadas tienen `F_PAGO`; las pendientes/vencidas no; los estados y vencimientos son coherentes con el corte.
+- El generador produce 300 facturas y 300 detalles, una por servicio: 120 de diagnóstico (`ID_TIPO_SERVICIO = 1`), 120 de tratamiento (`2`) y 60 de intervención (`3`).
+- `F_EMISION` es la fecha del servicio y `F_VENCIMIENTO = F_EMISION + 30 días`.
+- `MONTO_TOTAL` sale del catálogo: `DIAGN.COSTO`, `TRATAMIENTO.COSTO` o `PRACTICA.COSTO`.
+- La cobertura usa la póliza principal aprobada y vigente en la fecha del servicio que cubra la categoría (`EXAMENES`, `HOSPITALIZACION` o `CIRUGIA`); si no, intenta la secundaria. `MONTO_CUBIERTO = min(COBERTURA, MONTO_TOTAL)` y `MONTO_PACIENTE` es el resto.
+- La factura registra la póliza y aseguradora efectivamente usadas. Los pacientes sin cobertura quedan con `MONTO_CUBIERTO = 0`, `TIPO_CLIENTE = 'PACIENTE'` y póliza NULL.
+- Estados: 180 pagadas, 75 pendientes y 45 vencidas.
+  - Las pendientes son las emitidas entre agosto y octubre de 2026; quedan impagas.
+  - Las vencidas se emiten antes de agosto de 2026 y al corte tienen más de 60 días de mora.
+  - Las pagadas tienen `F_PAGO` entre 5 y 90 días después de la emisión, siempre dentro del corte. La mayoría paga el total; 36 facturas tienen pago parcial (entre 40% y 90% del total).
+- Los IDs de `FACTURA` y `FACTURA_DETALLE` son explícitos (6001–6300 y 9001–9300). Como los IDs de servicio son `IDENTITY`, el detalle los resuelve por clave natural con subconsultas, de modo que la carga no depende del valor numérico generado.
+- El SQL incluye autovalidación y es reejecutable; `TRUNCATE ... CASCADE` limpia la facturación.
 
-### Fase 7 — Efectos secundarios
+**Verificación:**
+
+- 300 facturas y 300 detalles; 120/120/60 por tipo de servicio.
+- 0 facturas sin detalle o con más de un detalle.
+- 0 servicios sin factura y 0 servicios facturados dos veces.
+- 0 facturas con `MONTO_CUBIERTO + MONTO_PACIENTE <> MONTO_TOTAL`.
+- 0 facturas con `TIPO_CLIENTE` incoherente con el monto cubierto.
+- 0 facturas con vencimiento distinto de emisión + 30 días.
+- 0 facturas con póliza no aprobada, vencida o que no cubra la categoría del servicio.
+- 0 facturas pagadas sin fecha/monto de pago, fuera del rango 5–90 días o con pago posterior al corte.
+- 0 facturas pendientes/vencidas con datos de pago.
+- 0 pendientes emitidas fuera de agosto–octubre de 2026.
+- 0 vencidas con 60 días de mora o menos al corte.
+- 0 detalles con paciente o ingreso distinto del servicio que facturan.
+- El generador produce siempre el mismo archivo; `06` se ejecutó dos veces seguidas y la secuencia completa dos veces sin errores.
+
+**Criterio de aceptación:** cumplido. Hay 300 facturas, una por servicio, con montos coherentes, cobertura de la póliza efectiva y estados/fechas compatibles con el corte del `2026-10-31`.
+
+### Fase 7 — Efectos secundarios ✅
+
+**Estado:** completada el 2026-11-21.
 
 **Objetivo:** cubrir RN-08.
 
-**Actividades:**
+**Archivos creados:**
 
-- Generar 20 registros de efectos secundarios asociados a prescripciones.
-- Fecha dentro del período de la prescripción.
-- Descripción y gravedad (`LEVE`, `MODERADO`, `GRAVE`).
+- `oltp/datos_prueba/07_efectos_secundarios.sql`
+- `oltp/datos_prueba/generar_datos.py` (extendido con la Fase 7)
 
-**Salida:** `EFECTO_SECUNDARIO_PACIENTE` cargada.
+**Actividades realizadas:**
 
-**Criterio de aceptación:** todos los efectos referencian una prescripción válida y una fecha coherente.
+- El generador produce 20 efectos secundarios, 2 por cada una de las 10 áreas.
+- Cada efecto referencia una prescripción distinta y una fecha dentro de su período (`F_INICIO ≤ FECHA ≤ F_FIN`).
+- La descripción se deriva del tratamiento prescrito (mareo, náuseas, hipoglucemia, irritación local, etc.).
+- La gravedad se reparte entre `LEVE` (6), `MODERADO` (7) y `GRAVE` (7), sin un criterio clínico específico.
+- `ID_EFECTO` explícito (4001–4020). La prescripción se resuelve por clave natural con subconsulta, porque su ID es `IDENTITY`.
+- El SQL incluye autovalidación y es reejecutable.
 
-### Fase 8 — Validación y documentación
+**Verificación:**
+
+- 20 efectos, todos con prescripción válida.
+- 0 fechas fuera del período de la prescripción.
+- 0 gravedades fuera de `LEVE/MODERADO/GRAVE` y 0 descripciones vacías.
+- 0 prescripciones con más de un efecto.
+- Las 10 áreas tienen exactamente 2 efectos.
+- El generador produce siempre el mismo archivo; `07` se ejecutó dos veces seguidas y la secuencia completa dos veces sin errores.
+
+**Criterio de aceptación:** cumplido. Los 20 efectos referencian prescripciones válidas, con fecha coherente, descripción y gravedad, y están repartidos entre todas las áreas.
+
+### Fase 8 — Validación y documentación ✅
+
+**Estado:** completada el 2026-11-21.
 
 **Objetivo:** demostrar que el conjunto cumple el mínimo y las reglas.
 
-**Actividades:**
+**Archivos creados:**
 
-- Crear `validacion/validar_minimos.sql` con conteos y aserciones.
-- Crear `docs/calidad_datos.md` con los problemas de las fuentes y las decisiones de limpieza.
-- Ejecutar la carga completa en PostgreSQL con `ON_ERROR_STOP`.
-- Verificar que el ETL pueda poblar `fact_facturacion`, `fact_diagnostico`, `fact_tratamiento`, `fact_intervencion` y las dimensiones.
-- Verificar que la carga sea reejecutable.
+- `validacion/validar_minimos.sql`
+- `docs/calidad_datos.md`
 
-**Salida:** script de validación y documentación de calidad.
+**Actividades realizadas:**
 
-**Criterio de aceptación:** todas las validaciones pasan y el ETL no encuentra claves huérfanas.
+- El script de validación se organiza en cinco bloques: mínimos, coherencia de ingresos y camas, facturación y pólizas, efectos secundarios y cobertura del mapeo OLTP → DWH.
+- Cada condición falla con una excepción; con `ON_ERROR_STOP` la ejecución se detiene y `psql` devuelve código 3.
+- El bloque de mapeo comprueba que cada tabla de hechos y dimensión tiene en el OLTP las claves y los atributos obligatorios (fechas, paciente, médico, área, servicio, medicina, personal y riesgo).
+- `docs/calidad_datos.md` documenta los problemas de las cuatro fuentes, las decisiones de limpieza y las limitaciones que quedan.
+- La carga completa (DDL + `01`–`07`) se ejecutó en una base nueva con `ON_ERROR_STOP` y la secuencia se repitió dos veces más sobre la misma base.
+- El generador se volvió a ejecutar y los cuatro archivos transaccionales mantuvieron su MD5.
+
+**Verificación:**
+
+- Todas las validaciones pasan sobre `saludpublica_f8`.
+- 40 pacientes, 12 médicos, 10 áreas, 12 personas de personal, 26 camas, 60 ingresos, 120 diagnósticos, 120 prescripciones, 60 intervenciones, 300 facturas, 300 detalles y 20 efectos.
+- 0 violaciones en todas las reglas de coherencia y en las claves requeridas por el ETL.
+- Una prueba negativa (fecha de servicio movida fuera de la internación) detuvo el script y devolvió código 3.
+
+**Criterio de aceptación:** cumplido. Todas las validaciones pasan y el ETL dispone en el OLTP de todos los datos necesarios para poblar las dimensiones y las cuatro tablas de hechos.
 
 ## 8. Validaciones mínimas
 
@@ -440,14 +490,14 @@ La implementación generará o modificará:
 - [x] `oltp/ddl/OLTP.sql` (Fase 1).
 - [x] `oltp/datos_prueba/01_catalogos.sql` (Fase 2).
 - [x] `oltp/datos_prueba/02_maestros.sql` (Fase 2).
-- [x] `oltp/datos_prueba/generar_datos.py` (Fases 4–5; se extiende en la fase 6).
+- [x] `oltp/datos_prueba/generar_datos.py` (Fases 4–7).
 - [x] `oltp/datos_prueba/03_polizas.sql` (Fase 3).
 - [x] `oltp/datos_prueba/04_ingresos_ocupaciones.sql` (Fase 4).
 - [x] `oltp/datos_prueba/05_servicios.sql` (Fase 5).
-- [ ] `oltp/datos_prueba/06_facturacion.sql`.
-- [ ] `oltp/datos_prueba/07_efectos_secundarios.sql`.
-- [ ] `validacion/validar_minimos.sql`.
-- [ ] `docs/calidad_datos.md`.
+- [x] `oltp/datos_prueba/06_facturacion.sql`.
+- [x] `oltp/datos_prueba/07_efectos_secundarios.sql`.
+- [x] `validacion/validar_minimos.sql`.
+- [x] `docs/calidad_datos.md`.
 
 El generador puede emitir un único `carga_datos.sql` con secciones equivalentes; la separación por fases es para poder validar paso a paso.
 
@@ -465,4 +515,4 @@ El generador puede emitir un único `carga_datos.sql` con secciones equivalentes
 
 ## 11. Próximo paso
 
-Las Fases 1 a 5 ya están implementadas. El siguiente paso es la **Fase 6 — Facturación**: generar 300 facturas (una por servicio), aplicar la cobertura de la póliza efectiva y distribuir los estados pagada, pendiente y vencida con fechas coherentes con el corte del `2026-10-31`. Después se avanza en el orden de las fases, validando cada una antes de pasar a la siguiente.
+Las Fases 1 a 8 están completas: el OLTP tiene datos de prueba validados y documentados, y el modelo dimensional puede poblarse con ellos. El siguiente paso es implementar el **ETL** que cargue `dwh` desde el OLTP y los archivos planos, y luego construir el dashboard de indicadores.

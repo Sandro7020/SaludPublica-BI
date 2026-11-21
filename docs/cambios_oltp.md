@@ -1,8 +1,8 @@
 # Cambios al modelo OLTP
 
-> **Estado:** Fases 1 a 5 implementadas: DDL extendido, catálogos, maestros, pólizas, ingresos/ocupaciones y servicios cargados y validados sobre PostgreSQL 18. La facturación y los efectos secundarios están pendientes.
+> **Estado:** Fases 1 a 8 implementadas: DDL extendido, catálogos, maestros, pólizas, ingresos/ocupaciones, servicios, facturación y efectos secundarios cargados y validados sobre PostgreSQL 18, con validación integral y documentación de calidad.
 >
-> **Plan asociado:** [Plan de generación de datos](plan_generacion_datos.md)
+> **Plan asociado:** [Plan de generación de datos](plan_generacion_datos.md) · [Calidad de datos](calidad_datos.md)
 
 ## 0. Estado de implementación
 
@@ -60,6 +60,33 @@
 - `PRESCRIBE` completa duración y dosis diaria; `PRACTICA` completa `NUMBER_INGRESO`, riesgo, duración y montos.
 - Se validan edad y sexo: Pediatría solo tiene menores de 18 años y los diagnósticos obstétricos/oncológicos respetan el sexo del paciente.
 - El script incluye autovalidación y es reejecutable.
+
+**Fase 6 (facturación):**
+
+- `generar_datos.py` produce de forma determinista 300 facturas y 300 detalles, una por servicio (120 diagnósticos, 120 tratamientos y 60 intervenciones).
+- `F_EMISION` es la fecha del servicio y `F_VENCIMIENTO = F_EMISION + 30 días`.
+- `MONTO_TOTAL` usa el costo del catálogo: `DIAGN.COSTO`, `TRATAMIENTO.COSTO` o `PRACTICA.COSTO`.
+- Se aplica la póliza principal aprobada y vigente que cubra la categoría; si no, la secundaria. `MONTO_CUBIERTO = min(COBERTURA, MONTO_TOTAL)` y el resto queda como `MONTO_PACIENTE`.
+- Los pacientes sin cobertura quedan como autopago (`TIPO_CLIENTE = 'PACIENTE'`, póliza NULL).
+- Estados: 180 pagadas (36 con pago parcial), 75 pendientes de ago–oct 2026 y 45 vencidas con más de 60 días de mora al corte.
+- Las pagadas tienen `F_PAGO` entre 5 y 90 días después de la emisión y siempre dentro del corte.
+- Los IDs de servicio son `IDENTITY`; el detalle los resuelve por clave natural con subconsultas.
+- El script incluye autovalidación y es reejecutable.
+
+**Fase 7 (efectos secundarios):**
+
+- `generar_datos.py` produce 20 efectos secundarios, 2 por cada una de las 10 áreas.
+- Cada efecto referencia una prescripción distinta y una fecha dentro de su período.
+- La descripción se deriva del tratamiento prescrito y la gravedad se reparte entre `LEVE` (6), `MODERADO` (7) y `GRAVE` (7).
+- El ID de la prescripción se resuelve por clave natural con subconsulta.
+- El script incluye autovalidación y es reejecutable.
+
+**Fase 8 (validación y documentación):**
+
+- `validacion/validar_minimos.sql` comprueba mínimos, coherencia de ingresos y camas, facturación, pólizas, efectos secundarios y la cobertura del mapeo OLTP → DWH.
+- Cada condición falla con una excepción; con `ON_ERROR_STOP` la ejecución se detiene y `psql` devuelve código 3.
+- `docs/calidad_datos.md` documenta los problemas de las cuatro fuentes, las decisiones de limpieza y las limitaciones.
+- La secuencia completa se ejecutó en una base nueva y se repitió dos veces más; el generador mantuvo sus MD5.
 
 ## 1. Principios del cambio
 
@@ -399,8 +426,9 @@ Con las nuevas tablas y columnas, el ETL puede poblar esos objetos sin inventar 
 - [x] Crear las pólizas (Fase 3).
 - [x] Crear los ingresos y ocupaciones (Fase 4).
 - [x] Crear los servicios clínicos (Fase 5).
-- [ ] Crear la facturación y los efectos secundarios (Fases 6 y 7).
-- [ ] Ejecutar las validaciones sobre el conjunto completo (Fase 8).
-- [ ] Actualizar la documentación de calidad de datos.
+- [x] Crear la facturación (Fase 6).
+- [x] Crear los efectos secundarios (Fase 7).
+- [x] Ejecutar las validaciones sobre el conjunto completo (Fase 8).
+- [x] Actualizar la documentación de calidad de datos.
 
-El DDL, los catálogos, los maestros, las pólizas, los ingresos y los servicios ya están implementados; faltan la facturación y los efectos secundarios.
+El DDL, los catálogos, los maestros, las pólizas, los ingresos, los servicios, la facturación, los efectos secundarios y la validación integral ya están implementados. El siguiente paso es el ETL hacia el modelo dimensional.

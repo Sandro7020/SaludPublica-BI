@@ -3,6 +3,8 @@
 
 Fase 4: ingresos hospitalarios y ocupacion de camas.
 Fase 5: diagnosticos, prescripciones e intervenciones.
+Fase 6: facturacion de los servicios y seguimiento de cobro.
+Fase 7: efectos secundarios de las prescripciones.
 
 El generador no depende de la base de datos: usa los identificadores y
 perfiles definidos en las fases 1 a 3 y escribe el SQL de carga. Con la
@@ -12,8 +14,8 @@ Uso:
     python3 oltp/datos_prueba/generar_datos.py
     python3 oltp/datos_prueba/generar_datos.py --solo-fase 4 --out /tmp/04.sql
     python3 oltp/datos_prueba/generar_datos.py --solo-fase 5 --out-servicios /tmp/05.sql
-
-La fase 6 se agregara en un paso posterior.
+    python3 oltp/datos_prueba/generar_datos.py --solo-fase 6 --out-facturacion /tmp/06.sql
+    python3 oltp/datos_prueba/generar_datos.py --solo-fase 7 --out-efectos /tmp/07.sql
 """
 
 from __future__ import annotations
@@ -240,6 +242,110 @@ DURACION_INTERVENCION = {
     1: 90, 2: 120, 3: 60, 4: 90, 5: 30, 6: 45, 7: 60, 8: 180,
     9: 30, 10: 60, 11: 90, 12: 45, 13: 30, 14: 20, 15: 60,
 }
+
+# ---------------------------------------------------------------------------
+# Fase 6 - Facturacion
+# ---------------------------------------------------------------------------
+
+# Costos del catalogo de diagnosticos y tratamientos (01_catalogos.sql).
+COSTO_DIAGNOSTICO = {
+    1: 6000, 2: 7000, 3: 5000, 4: 4500, 5: 5500, 6: 6500, 7: 8000,
+    8: 12000, 9: 9500, 10: 4000, 11: 3500, 12: 9000, 13: 11000,
+    14: 7500, 15: 15000, 16: 12000, 17: 9000, 18: 15000, 19: 14000,
+    20: 8500, 21: 9500, 22: 6000,
+}
+COSTO_TRATAMIENTO = {
+    1: 18000, 2: 32000, 3: 26000, 4: 24000, 5: 12000, 6: 20000,
+    7: 38000, 8: 45000, 9: 78000, 10: 9000, 11: 21000, 12: 42000,
+}
+
+# Polizas de 03_polizas.sql:
+# (ID_POLIZA, CI_PAC, ID_ASEGURADORA, TIPO_POLIZA, APROBADA,
+#  HOSPITALIZACION, CIRUGIA, EXAMENES, COBERTURA, F_DESDE, F_HASTA)
+POLIZAS_DETALLE = [
+    (1, 20364201, 1, "PRINCIPAL", True, False, True, True, 10000, date(2025, 1, 1), date(2026, 12, 31)),
+    (2, 20364202, 2, "PRINCIPAL", True, True, False, False, 20000, date(2025, 1, 1), date(2026, 12, 31)),
+    (3, 20364203, 3, "PRINCIPAL", True, True, True, True, 30000, date(2024, 7, 1), date(2026, 12, 31)),
+    (4, 20364204, 4, "PRINCIPAL", False, False, True, False, 50000, date(2025, 3, 1), date(2026, 12, 31)),
+    (5, 20364205, 5, "PRINCIPAL", True, True, True, False, 60000, date(2025, 1, 1), None),
+    (6, 20364206, 6, "PRINCIPAL", True, False, True, True, 100000, date(2025, 1, 1), date(2026, 12, 31)),
+    (7, 20364207, 7, "PRINCIPAL", False, False, False, True, 10000, date(2024, 10, 1), date(2026, 12, 31)),
+    (8, 20364208, 1, "PRINCIPAL", True, True, False, True, 20000, date(2025, 1, 1), date(2026, 12, 31)),
+    (9, 20364209, 2, "PRINCIPAL", False, True, False, False, 30000, date(2025, 1, 1), date(2027, 6, 30)),
+    (10, 20364210, 3, "PRINCIPAL", True, True, True, False, 50000, date(2025, 5, 1), date(2026, 12, 31)),
+    (11, 20364211, 4, "PRINCIPAL", False, True, False, True, 60000, date(2025, 1, 1), date(2026, 12, 31)),
+    (12, 20364212, 5, "PRINCIPAL", True, True, True, True, 100000, date(2024, 1, 1), None),
+    (13, 20364213, 6, "PRINCIPAL", True, False, True, True, 10000, date(2025, 1, 1), date(2026, 12, 31)),
+    (14, 20364214, 7, "PRINCIPAL", True, True, True, True, 20000, date(2025, 2, 1), date(2026, 12, 31)),
+    (15, 20364215, 1, "PRINCIPAL", False, False, True, False, 30000, date(2025, 1, 1), date(2026, 12, 31)),
+    (16, 20364216, 2, "PRINCIPAL", True, True, False, True, 50000, date(2024, 9, 1), date(2026, 12, 31)),
+    (17, 20364217, 3, "PRINCIPAL", False, True, True, True, 60000, date(2025, 1, 1), date(2027, 1, 1)),
+    (18, 20364218, 4, "PRINCIPAL", True, False, True, True, 100000, date(2025, 6, 1), date(2026, 12, 31)),
+    (19, 20364219, 5, "PRINCIPAL", False, True, True, True, 10000, date(2025, 1, 1), date(2026, 12, 31)),
+    (20, 20364220, 6, "PRINCIPAL", True, False, True, False, 20000, date(2024, 11, 1), date(2026, 12, 31)),
+    (21, 20364221, 7, "PRINCIPAL", True, False, False, True, 30000, date(2025, 1, 1), None),
+    (22, 20364222, 1, "PRINCIPAL", True, True, True, True, 50000, date(2025, 3, 1), date(2026, 12, 31)),
+    (23, 20364223, 2, "PRINCIPAL", False, True, True, True, 60000, date(2025, 1, 1), date(2026, 12, 31)),
+    (24, 20364224, 3, "PRINCIPAL", True, True, True, True, 100000, date(2024, 5, 1), date(2027, 12, 31)),
+    (25, 20364225, 4, "PRINCIPAL", False, True, True, False, 10000, date(2025, 1, 1), date(2026, 12, 31)),
+    (26, 20364226, 5, "PRINCIPAL", True, True, False, True, 20000, date(2025, 7, 1), date(2026, 12, 31)),
+    (27, 20364201, 2, "SECUNDARIA", True, True, False, False, 40000, date(2025, 1, 1), date(2026, 12, 31)),
+    (28, 20364202, 3, "SECUNDARIA", True, False, True, True, 50000, date(2025, 1, 1), date(2026, 12, 31)),
+    (29, 20364204, 6, "SECUNDARIA", True, True, False, True, 30000, date(2025, 1, 1), date(2026, 12, 31)),
+    (30, 20364207, 5, "SECUNDARIA", True, True, True, False, 20000, date(2025, 1, 1), date(2026, 12, 31)),
+    (31, 20364213, 4, "SECUNDARIA", True, True, False, False, 40000, date(2025, 1, 1), date(2026, 12, 31)),
+    (32, 20364217, 1, "SECUNDARIA", True, False, False, False, 30000, date(2025, 1, 1), date(2026, 12, 31)),
+    (33, 20364220, 2, "SECUNDARIA", True, True, False, True, 50000, date(2025, 1, 1), date(2026, 12, 31)),
+    (34, 20364226, 1, "SECUNDARIA", True, False, True, False, 40000, date(2025, 1, 1), date(2026, 12, 31)),
+    (35, 20364228, 1, "PRINCIPAL", True, True, False, True, 30000, date(2025, 6, 1), date(2026, 12, 31)),
+    (36, 20364229, 2, "PRINCIPAL", True, True, True, True, 60000, date(2025, 1, 1), date(2026, 12, 31)),
+    (37, 20364230, 3, "PRINCIPAL", True, True, False, True, 40000, date(2025, 1, 1), date(2026, 12, 31)),
+    (38, 20364232, 4, "PRINCIPAL", True, False, True, True, 50000, date(2025, 1, 1), date(2026, 12, 31)),
+    (39, 20364233, 5, "PRINCIPAL", True, True, True, True, 80000, date(2025, 1, 1), date(2026, 12, 31)),
+    (40, 20364235, 6, "PRINCIPAL", False, True, True, False, 20000, date(2025, 1, 1), date(2026, 12, 31)),
+    (41, 20364236, 7, "PRINCIPAL", True, True, False, True, 70000, date(2025, 1, 1), date(2026, 12, 31)),
+    (42, 20364237, 1, "PRINCIPAL", True, True, True, True, 100000, date(2025, 1, 1), date(2026, 12, 31)),
+]
+
+# Tipo de servicio facturado -> categoria de poliza y catalogo TIPO_SERVICIO.
+CATEGORIA_SERVICIO = {
+    "realiza": ("EXAMENES", 1),
+    "prescribe": ("HOSPITALIZACION", 2),
+    "practica": ("CIRUGIA", 3),
+}
+BANDERA_CATEGORIA = {
+    "EXAMENES": "examenes",
+    "HOSPITALIZACION": "hospitalizacion",
+    "CIRUGIA": "cirugia",
+}
+
+DIAS_VENCIMIENTO = 30
+INICIO_COBRO_RECIENTE = date(2026, 8, 1)
+ESTADO_PAGADA = 1
+ESTADO_PENDIENTE = 2
+ESTADO_VENCIDA = 3
+
+# ---------------------------------------------------------------------------
+# Fase 7 - Efectos secundarios
+# ---------------------------------------------------------------------------
+
+# Efecto tipico asociado a cada tratamiento prescrito.
+EFECTOS_POR_TRATAMIENTO = {
+    1: "MAREO LEVE AL INCORPORARSE",
+    2: "NAUSEAS Y DIARREA",
+    3: "HIPOGLUCEMIA TRANSITORIA",
+    4: "TOS SECA Y TEMBLOR",
+    5: "IRRITACION LOCAL EN LA PIEL",
+    6: "DOLOR ABDOMINAL",
+    7: "SOMNOLENCIA DIURNA",
+    8: "DOLOR MUSCULAR",
+    9: "NAUSEAS Y CAIDA DEL CABELLO",
+    10: "SOMNOLENCIA E IRRITABILIDAD",
+    11: "CEFALEA LEVE",
+    12: "MAREO Y SOMNOLENCIA",
+}
+GRAVEDADES = ("LEVE", "MODERADO", "GRAVE")
+EFECTOS_POR_AREA = 2
 
 
 def cantidad_ingresos(ci: int) -> int:
@@ -1083,6 +1189,650 @@ def resumen_servicios(servicios):
         )
 
 
+def polizas_por_paciente():
+    """Agrupa las polizas de la Fase 3 por paciente."""
+    agrupadas = defaultdict(list)
+    for fila in POLIZAS_DETALLE:
+        (
+            id_poliza, ci, id_aseguradora, tipo, aprobada,
+            hospitalizacion, cirugia, examenes, cobertura, desde, hasta,
+        ) = fila
+        agrupadas[ci].append({
+            "id": id_poliza,
+            "aseguradora": id_aseguradora,
+            "tipo": tipo,
+            "aprobada": aprobada,
+            "hospitalizacion": hospitalizacion,
+            "cirugia": cirugia,
+            "examenes": examenes,
+            "cobertura": float(cobertura),
+            "desde": desde,
+            "hasta": hasta,
+        })
+    return agrupadas
+
+
+def poliza_vigente(polizas, ci, categoria, fecha):
+    """Poliza efectiva para un servicio: principal y luego secundaria."""
+    bandera = BANDERA_CATEGORIA[categoria]
+    for tipo in ("PRINCIPAL", "SECUNDARIA"):
+        for poliza in polizas.get(ci, []):
+            if poliza["tipo"] != tipo or not poliza["aprobada"]:
+                continue
+            if not poliza[bandera]:
+                continue
+            if fecha < poliza["desde"]:
+                continue
+            if poliza["hasta"] is not None and fecha > poliza["hasta"]:
+                continue
+            return poliza
+    return None
+
+
+def construir_facturas(servicios):
+    polizas = polizas_por_paciente()
+    servicios_facturables = []
+
+    for tipo in ("realiza", "prescribe", "practica"):
+        categoria, id_tipo_servicio = CATEGORIA_SERVICIO[tipo]
+        for fila in servicios[tipo]:
+            if tipo == "realiza":
+                fecha = fila["fecha"]
+                monto = float(COSTO_DIAGNOSTICO[fila["id_diagn"]])
+                referencia = fila["id_diagn"]
+            elif tipo == "prescribe":
+                fecha = fila["f_elaboracion"]
+                monto = float(COSTO_TRATAMIENTO[fila["id_tratamiento"]])
+                referencia = fila["id_tratamiento"]
+            else:
+                fecha = fila["fecha"]
+                monto = float(fila["costo"])
+                referencia = fila["id_intervencion"]
+
+            servicios_facturables.append({
+                "tipo": tipo,
+                "categoria": categoria,
+                "id_tipo_servicio": id_tipo_servicio,
+                "ci": fila["ci_pac"],
+                "numero": fila["numero"],
+                "area": fila["area"],
+                "fecha": fecha,
+                "monto": monto,
+                "referencia": referencia,
+                "clave": fila,
+            })
+
+    servicios_facturables.sort(
+        key=lambda fila: (
+            fila["fecha"],
+            fila["id_tipo_servicio"],
+            fila["numero"],
+            fila["ci"],
+            fila["referencia"],
+        )
+    )
+
+    facturas = []
+    posicion_temprana = 0
+    posicion_pagada = 0
+
+    for indice, servicio in enumerate(servicios_facturables):
+        poliza = poliza_vigente(
+            polizas, servicio["ci"], servicio["categoria"], servicio["fecha"]
+        )
+        total = round(servicio["monto"], 2)
+        if poliza is None:
+            cubierto = 0.0
+            tipo_cliente = "PACIENTE"
+            id_poliza = None
+            id_aseguradora = None
+        else:
+            cubierto = round(min(poliza["cobertura"], total), 2)
+            tipo_cliente = "ASEGURADORA"
+            id_poliza = poliza["id"]
+            id_aseguradora = poliza["aseguradora"]
+        paciente = round(total - cubierto, 2)
+
+        f_pago = None
+        monto_pagado = None
+        if servicio["fecha"] >= INICIO_COBRO_RECIENTE:
+            # Cobro reciente: queda pendiente al corte.
+            estado = ESTADO_PENDIENTE
+        else:
+            if posicion_temprana % 5 == 0:
+                # Emitida hace mas de 60 dias y sin pago: vencida.
+                estado = ESTADO_VENCIDA
+            else:
+                estado = ESTADO_PAGADA
+                f_pago = servicio["fecha"] + timedelta(
+                    days=5 + (posicion_pagada * 7) % 86
+                )
+                # Defensa: un pago nunca supera el corte del periodo.
+                if f_pago > PERIODO_FIN:
+                    f_pago = PERIODO_FIN
+                if posicion_pagada % 5 == 3:
+                    # Algunos pagos son parciales; la mayoria son totales.
+                    factor = 0.40 + 0.05 * (posicion_pagada % 11)
+                    monto_pagado = min(round(total * factor, 2), total)
+                else:
+                    monto_pagado = total
+                posicion_pagada += 1
+            posicion_temprana += 1
+
+        facturas.append({
+            **servicio,
+            "id_factura": 6001 + indice,
+            "id_detalle": 9001 + indice,
+            "id_poliza": id_poliza,
+            "id_aseguradora": id_aseguradora,
+            "tipo_cliente": tipo_cliente,
+            "f_vencimiento": servicio["fecha"] + timedelta(days=DIAS_VENCIMIENTO),
+            "monto_total": total,
+            "monto_cubierto": cubierto,
+            "monto_paciente": paciente,
+            "estado": estado,
+            "f_pago": f_pago,
+            "monto_pagado": monto_pagado,
+        })
+
+    return facturas
+
+
+def subconsulta_prescripcion(fila):
+    """Subconsulta por clave natural de una prescripcion."""
+    return (
+        "(SELECT ID_PRESCRIPCION FROM PRESCRIBE"
+        f" WHERE CI_MEDICO = {fila['ci_medico']}"
+        f" AND CI_PAC = {fila['ci_pac']}"
+        f" AND ID_TRATAMIENTO = {fila['id_tratamiento']}"
+        f" AND NUMBER_INGRESO = {fila['numero']}"
+        f" AND F_ELABORACION = {sql_fecha(fila['f_elaboracion'])})"
+    )
+
+
+def subconsulta_servicio(factura):
+    """Subconsulta por clave natural para resolver el ID identity del servicio."""
+    clave = factura["clave"]
+    if factura["tipo"] == "realiza":
+        return (
+            "(SELECT ID_REALIZA FROM REALIZA"
+            f" WHERE CI_MEDICO = {clave['ci_medico']}"
+            f" AND CI_PAC = {clave['ci_pac']}"
+            f" AND ID_DIAGN = {clave['id_diagn']}"
+            f" AND NUMBER_INGRESO = {clave['numero']}"
+            f" AND F_ELABORACION = {sql_fecha(clave['fecha'])})"
+        )
+    if factura["tipo"] == "prescribe":
+        return subconsulta_prescripcion(clave)
+    return (
+        "(SELECT ID_PRACTICA FROM PRACTICA"
+        f" WHERE CI_MEDICO = {clave['ci_medico']}"
+        f" AND CI_PAC = {clave['ci_pac']}"
+        f" AND ID_INTERVENCION = {clave['id_intervencion']}"
+        f" AND CI_PERSONAL_SANITARIO = {clave['ci_personal']}"
+        f" AND F = {sql_fecha(clave['fecha'])})"
+    )
+
+
+def renderizar_facturacion(facturas):
+    total = len(facturas)
+    pagadas = sum(1 for f in facturas if f["estado"] == ESTADO_PAGADA)
+    pendientes = sum(1 for f in facturas if f["estado"] == ESTADO_PENDIENTE)
+    vencidas = sum(1 for f in facturas if f["estado"] == ESTADO_VENCIDA)
+    parciales = sum(
+        1 for f in facturas
+        if f["estado"] == ESTADO_PAGADA and f["monto_pagado"] < f["monto_total"]
+    )
+
+    lineas = []
+    lineas.append("-- ============================================================================")
+    lineas.append("-- Fase 6 - Facturacion (PostgreSQL)")
+    lineas.append("-- Esquema destino: \"OLTP\"")
+    lineas.append("--")
+    lineas.append("-- Generado por oltp/datos_prueba/generar_datos.py.")
+    lineas.append("-- No editar a mano: los cambios deben hacerse en el generador.")
+    lineas.append("--")
+    lineas.append(
+        f"-- Contenido: {total} facturas y {total} detalles (una por servicio)."
+    )
+    lineas.append(
+        f"-- Estados: {pagadas} pagadas ({parciales} con pago parcial), "
+        f"{pendientes} pendientes y {vencidas} vencidas."
+    )
+    lineas.append("-- La fecha de emision es la fecha del servicio y el vencimiento")
+    lineas.append("-- es la emision + 30 dias.")
+    lineas.append("-- La cobertura usa la poliza principal vigente; si no cubre la")
+    lineas.append("-- categoria, intenta la secundaria. Sin poliza el paciente paga todo.")
+    lineas.append("--")
+    lineas.append("-- Requiere: 01_catalogos.sql, 02_maestros.sql, 03_polizas.sql,")
+    lineas.append("--           04_ingresos_ocupaciones.sql y 05_servicios.sql.")
+    lineas.append("-- ============================================================================")
+    lineas.append("")
+    lineas.append('SET search_path TO "OLTP";')
+    lineas.append("")
+    lineas.append('TRUNCATE TABLE "OLTP".FACTURA, "OLTP".FACTURA_DETALLE CASCADE;')
+    lineas.append("")
+    lineas.append("-- ============================================================================")
+    lineas.append("-- Facturas")
+    lineas.append("-- ============================================================================")
+    lineas.append(
+        "INSERT INTO FACTURA (ID_FACTURA, NUMBER_INGRESO, CI_PAC, ID_POLIZA, "
+        "ID_ASEGURADORA, TIPO_CLIENTE, F_EMISION, F_VENCIMIENTO, MONTO_TOTAL, "
+        "MONTO_CUBIERTO, MONTO_PACIENTE, ID_ESTADO, F_PAGO, MONTO_PAGADO) VALUES"
+    )
+    for posicion, factura in enumerate(facturas):
+        sufijo = "," if posicion < total - 1 else ";"
+        estado = {
+            ESTADO_PAGADA: "PAGADA",
+            ESTADO_PENDIENTE: "PENDIENTE",
+            ESTADO_VENCIDA: "VENCIDA",
+        }[factura["estado"]]
+        comentario = (
+            f"-- ingreso {factura['numero']} area {factura['area']} "
+            f"{factura['tipo']} {factura['referencia']} {estado}"
+        )
+        lineas.append(
+            f"\t({factura['id_factura']}, {factura['numero']}, {factura['ci']}, "
+            f"{sql_id(factura['id_poliza'])}, {sql_id(factura['id_aseguradora'])}, "
+            f"'{factura['tipo_cliente']}', {sql_fecha(factura['fecha'])}, "
+            f"{sql_fecha(factura['f_vencimiento'])}, "
+            f"{factura['monto_total']:.2f}, {factura['monto_cubierto']:.2f}, "
+            f"{factura['monto_paciente']:.2f}, {factura['estado']}, "
+            f"{sql_fecha(factura['f_pago'])}, "
+            f"{sql_monto(factura['monto_pagado'])}){sufijo}  {comentario}"
+        )
+    lineas.append("")
+    lineas.append("-- ============================================================================")
+    lineas.append("-- Detalle de factura (un servicio por linea)")
+    lineas.append("-- ============================================================================")
+    lineas.append(
+        "INSERT INTO FACTURA_DETALLE (ID_DETALLE, ID_FACTURA, ID_TIPO_SERVICIO, "
+        "ID_REALIZA, ID_PRESCRIPCION, ID_PRACTICA, F_SERVICIO, MONTO) VALUES"
+    )
+    for posicion, factura in enumerate(facturas):
+        sufijo = "," if posicion < total - 1 else ";"
+        id_realiza = subconsulta_servicio(factura) if factura["tipo"] == "realiza" else "NULL"
+        id_prescripcion = subconsulta_servicio(factura) if factura["tipo"] == "prescribe" else "NULL"
+        id_practica = subconsulta_servicio(factura) if factura["tipo"] == "practica" else "NULL"
+        lineas.append(
+            f"\t({factura['id_detalle']}, {factura['id_factura']}, "
+            f"{factura['id_tipo_servicio']}, {id_realiza}, {id_prescripcion}, "
+            f"{id_practica}, {sql_fecha(factura['fecha'])}, "
+            f"{factura['monto_total']:.2f}){sufijo}"
+        )
+    lineas.append("")
+    lineas.extend(bloque_validacion_facturacion())
+    return "\n".join(lineas) + "\n"
+
+
+def sql_monto(valor):
+    return "NULL" if valor is None else f"{valor:.2f}"
+
+
+def bloque_validacion_facturacion():
+    return [
+        "-- ============================================================================",
+        "-- Autovalidacion de la fase",
+        "-- ============================================================================",
+        "DO $$",
+        "DECLARE",
+        "\tv_filas INTEGER;",
+        "BEGIN",
+        "\tSELECT count(*) INTO v_filas FROM FACTURA;",
+        "\tIF v_filas < 200 THEN",
+        "\t\tRAISE EXCEPTION 'Se esperaban al menos 200 facturas y hay %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\t-- Una factura por servicio.",
+        "\tSELECT count(*) INTO v_filas FROM FACTURA;",
+        "\tIF v_filas <> (SELECT count(*) FROM REALIZA)",
+        "\t            + (SELECT count(*) FROM PRESCRIBE)",
+        "\t            + (SELECT count(*) FROM PRACTICA) THEN",
+        "\t\tRAISE EXCEPTION 'La cantidad de facturas no coincide con los servicios: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM FACTURA f",
+        "\tWHERE (SELECT count(*) FROM FACTURA_DETALLE d",
+        "\t       WHERE d.ID_FACTURA = f.ID_FACTURA) <> 1;",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay facturas sin exactamente un detalle: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM REALIZA r",
+        "\tWHERE NOT EXISTS (",
+        "\t\tSELECT 1 FROM FACTURA_DETALLE d WHERE d.ID_REALIZA = r.ID_REALIZA",
+        "\t);",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay diagnosticos sin factura: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM PRESCRIBE p",
+        "\tWHERE NOT EXISTS (",
+        "\t\tSELECT 1 FROM FACTURA_DETALLE d WHERE d.ID_PRESCRIPCION = p.ID_PRESCRIPCION",
+        "\t);",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay prescripciones sin factura: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM PRACTICA p",
+        "\tWHERE NOT EXISTS (",
+        "\t\tSELECT 1 FROM FACTURA_DETALLE d WHERE d.ID_PRACTICA = p.ID_PRACTICA",
+        "\t);",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay intervenciones sin factura: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\t-- El detalle y la factura describen el mismo servicio y el mismo monto.",
+        "\tSELECT count(*) INTO v_filas",
+        "\tFROM FACTURA_DETALLE d",
+        "\tJOIN FACTURA f ON f.ID_FACTURA = d.ID_FACTURA",
+        "\tLEFT JOIN REALIZA r ON r.ID_REALIZA = d.ID_REALIZA",
+        "\tLEFT JOIN PRESCRIBE p ON p.ID_PRESCRIPCION = d.ID_PRESCRIPCION",
+        "\tLEFT JOIN PRACTICA pr ON pr.ID_PRACTICA = d.ID_PRACTICA",
+        "\tWHERE d.F_SERVICIO <> f.F_EMISION",
+        "\t   OR d.MONTO <> f.MONTO_TOTAL",
+        "\t   OR (d.ID_REALIZA IS NOT NULL AND d.ID_TIPO_SERVICIO <> 1)",
+        "\t   OR (d.ID_PRESCRIPCION IS NOT NULL AND d.ID_TIPO_SERVICIO <> 2)",
+        "\t   OR (d.ID_PRACTICA IS NOT NULL AND d.ID_TIPO_SERVICIO <> 3)",
+        "\t   OR (r.ID_REALIZA IS NOT NULL",
+        "\t       AND (r.NUMBER_INGRESO <> f.NUMBER_INGRESO OR r.CI_PAC <> f.CI_PAC))",
+        "\t   OR (p.ID_PRESCRIPCION IS NOT NULL",
+        "\t       AND (p.NUMBER_INGRESO <> f.NUMBER_INGRESO OR p.CI_PAC <> f.CI_PAC))",
+        "\t   OR (pr.ID_PRACTICA IS NOT NULL",
+        "\t       AND (pr.NUMBER_INGRESO <> f.NUMBER_INGRESO OR pr.CI_PAC <> f.CI_PAC));",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay detalles incoherentes con su factura: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM FACTURA",
+        "\tWHERE MONTO_CUBIERTO + MONTO_PACIENTE <> MONTO_TOTAL;",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay facturas con montos incoherentes: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM FACTURA",
+        "\tWHERE (MONTO_CUBIERTO > 0",
+        "\t       AND (TIPO_CLIENTE <> 'ASEGURADORA'",
+        "\t            OR ID_POLIZA IS NULL OR ID_ASEGURADORA IS NULL))",
+        "\t   OR (MONTO_CUBIERTO = 0 AND TIPO_CLIENTE <> 'PACIENTE');",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay facturas con tipo de cliente incoherente: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM FACTURA",
+        "\tWHERE F_VENCIMIENTO <> F_EMISION + 30;",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay facturas con vencimiento distinto de emision + 30: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\t-- La poliza usada debe cubrir la categoria del servicio y estar vigente.",
+        "\tSELECT count(*) INTO v_filas",
+        "\tFROM FACTURA f",
+        "\tJOIN FACTURA_DETALLE d ON d.ID_FACTURA = f.ID_FACTURA",
+        "\tJOIN TIPO_SERVICIO ts ON ts.ID_TIPO_SERVICIO = d.ID_TIPO_SERVICIO",
+        "\tJOIN POLIZA p ON p.ID_POLIZA = f.ID_POLIZA",
+        "\tWHERE NOT p.APROBADA",
+        "\t   OR f.MONTO_CUBIERTO > p.COBERTURA",
+        "\t   OR f.F_EMISION < p.F_DESDE",
+        "\t   OR (p.F_HASTA IS NOT NULL AND f.F_EMISION > p.F_HASTA)",
+        "\t   OR (ts.CATEGORIA_POLIZA = 'EXAMENES' AND NOT p.EXAMENES)",
+        "\t   OR (ts.CATEGORIA_POLIZA = 'HOSPITALIZACION' AND NOT p.HOSPITALIZACION)",
+        "\t   OR (ts.CATEGORIA_POLIZA = 'CIRUGIA' AND NOT p.CIRUGIA);",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay facturas con una poliza que no cubre el servicio: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM FACTURA",
+        "\tWHERE ID_POLIZA IS NULL AND MONTO_CUBIERTO <> 0;",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay facturas sin poliza con monto cubierto: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\t-- Pagadas: con fecha y monto de pago, dentro del corte.",
+        "\tSELECT count(*) INTO v_filas FROM FACTURA",
+        "\tWHERE ID_ESTADO = 1",
+        "\t  AND (F_PAGO IS NULL OR MONTO_PAGADO IS NULL",
+        "\t       OR F_PAGO < F_EMISION OR F_PAGO > DATE '2026-10-31'",
+        "\t       OR F_PAGO - F_EMISION < 5 OR F_PAGO - F_EMISION > 90",
+        "\t       OR MONTO_PAGADO <= 0);",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay facturas pagadas sin pago valido: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\t-- Pendientes y vencidas: impagas.",
+        "\tSELECT count(*) INTO v_filas FROM FACTURA",
+        "\tWHERE ID_ESTADO IN (2, 3)",
+        "\t  AND (F_PAGO IS NOT NULL OR MONTO_PAGADO IS NOT NULL);",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay facturas impagas con datos de pago: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM FACTURA",
+        "\tWHERE ID_ESTADO = 2",
+        "\t  AND (F_EMISION < DATE '2026-08-01' OR F_EMISION > DATE '2026-10-31');",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay facturas pendientes fuera del cobro reciente: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM FACTURA",
+        "\tWHERE ID_ESTADO = 3 AND F_VENCIMIENTO >= DATE '2026-09-01';",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay facturas vencidas con mora de 60 dias o menos: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM FACTURA WHERE ID_ESTADO = 1;",
+        "\tIF v_filas < 150 THEN",
+        "\t\tRAISE EXCEPTION 'Se esperaban al menos 150 facturas pagadas y hay %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM FACTURA WHERE ID_ESTADO = 2;",
+        "\tIF v_filas < 50 THEN",
+        "\t\tRAISE EXCEPTION 'Se esperaban al menos 50 facturas pendientes y hay %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM FACTURA WHERE ID_ESTADO = 3;",
+        "\tIF v_filas < 30 THEN",
+        "\t\tRAISE EXCEPTION 'Se esperaban al menos 30 facturas vencidas y hay %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\t-- La mayoria de los pagos son totales, pero debe haber algunos parciales.",
+        "\tSELECT count(*) INTO v_filas FROM FACTURA",
+        "\tWHERE ID_ESTADO = 1 AND MONTO_PAGADO < MONTO_TOTAL;",
+        "\tIF v_filas = 0 THEN",
+        "\t\tRAISE EXCEPTION 'No hay facturas pagadas con pago parcial';",
+        "\tEND IF;",
+        "\tIF v_filas >= (SELECT count(*) / 2 FROM FACTURA WHERE ID_ESTADO = 1) THEN",
+        "\t\tRAISE EXCEPTION 'Demasiadas facturas pagadas con pago parcial: %', v_filas;",
+        "\tEND IF;",
+        "END;",
+        "$$;",
+    ]
+
+
+def resumen_facturacion(facturas):
+    print(f"Facturas: {len(facturas)}")
+    print(f"Detalles: {len(facturas)}")
+    estados = {ESTADO_PAGADA: "PAGADA", ESTADO_PENDIENTE: "PENDIENTE", ESTADO_VENCIDA: "VENCIDA"}
+    for estado, descripcion in estados.items():
+        print(f"{descripcion}: {sum(1 for f in facturas if f['estado'] == estado)}")
+    parciales = sum(
+        1 for f in facturas
+        if f["estado"] == ESTADO_PAGADA and f["monto_pagado"] < f["monto_total"]
+    )
+    print(f"Pagos parciales: {parciales}")
+    print(
+        "Facturas con cobertura: "
+        f"{sum(1 for f in facturas if f['monto_cubierto'] > 0)}"
+    )
+    print(
+        "Facturas de autopago: "
+        f"{sum(1 for f in facturas if f['tipo_cliente'] == 'PACIENTE')}"
+    )
+    print(
+        f"Monto total facturado: {sum(f['monto_total'] for f in facturas):.2f} Bs"
+    )
+
+
+def construir_efectos(servicios):
+    """Reparte 2 efectos secundarios por cada una de las 10 areas."""
+    prescripciones_por_area = defaultdict(list)
+    for fila in servicios["prescribe"]:
+        prescripciones_por_area[fila["area"]].append(fila)
+
+    efectos = []
+    for orden, area in enumerate(sorted(prescripciones_por_area)):
+        filas = prescripciones_por_area[area]
+        base = (orden * 7) % len(filas)
+        segunda = (base + len(filas) // 2) % len(filas)
+        if segunda == base:
+            segunda = (base + 1) % len(filas)
+
+        for posicion in (base, segunda):
+            fila = filas[posicion]
+            dias = int(fila["cant_dias"])
+            desplazamiento = (fila["ci_pac"] + fila["numero"] + posicion) % dias
+            fecha = fila["f_inicio"] + timedelta(days=desplazamiento)
+            gravedad = GRAVEDADES[
+                (fila["ci_pac"] + fila["numero"] + posicion) % len(GRAVEDADES)
+            ]
+            efectos.append({
+                "id_efecto": 4001 + len(efectos),
+                "prescripcion": fila,
+                "fecha": fecha,
+                "descripcion": EFECTOS_POR_TRATAMIENTO[fila["id_tratamiento"]],
+                "gravedad": gravedad,
+                "area": area,
+            })
+
+    efectos.sort(key=lambda fila: fila["id_efecto"])
+    return efectos
+
+
+def renderizar_efectos(efectos):
+    total = len(efectos)
+    lineas = []
+    lineas.append("-- ============================================================================")
+    lineas.append("-- Fase 7 - Efectos secundarios (PostgreSQL)")
+    lineas.append("-- Esquema destino: \"OLTP\"")
+    lineas.append("--")
+    lineas.append("-- Generado por oltp/datos_prueba/generar_datos.py.")
+    lineas.append("-- No editar a mano: los cambios deben hacerse en el generador.")
+    lineas.append("--")
+    lineas.append(
+        f"-- Contenido: {total} efectos secundarios, {EFECTOS_POR_AREA} por area."
+    )
+    lineas.append("-- La fecha cae dentro del periodo de la prescripcion asociada.")
+    lineas.append("--")
+    lineas.append("-- Requiere: 01_catalogos.sql, 02_maestros.sql, 03_polizas.sql,")
+    lineas.append("--           04_ingresos_ocupaciones.sql y 05_servicios.sql.")
+    lineas.append("-- ============================================================================")
+    lineas.append("")
+    lineas.append('SET search_path TO "OLTP";')
+    lineas.append("")
+    lineas.append('TRUNCATE TABLE "OLTP".EFECTO_SECUNDARIO_PACIENTE CASCADE;')
+    lineas.append("")
+    lineas.append("-- ============================================================================")
+    lineas.append("-- Efectos secundarios por prescripcion")
+    lineas.append("-- ============================================================================")
+    lineas.append(
+        "INSERT INTO EFECTO_SECUNDARIO_PACIENTE (ID_EFECTO, ID_PRESCRIPCION, "
+        "FECHA, DESCRIPCION, GRAVEDAD) VALUES"
+    )
+    for posicion, efecto in enumerate(efectos):
+        sufijo = "," if posicion < total - 1 else ";"
+        fila = efecto["prescripcion"]
+        comentario = (
+            f"-- ingreso {fila['numero']} area {efecto['area']} "
+            f"tratamiento {fila['id_tratamiento']}"
+        )
+        lineas.append(
+            f"\t({efecto['id_efecto']}, {subconsulta_prescripcion(fila)}, "
+            f"{sql_fecha(efecto['fecha'])}, '{efecto['descripcion']}', "
+            f"'{efecto['gravedad']}'){sufijo}  {comentario}"
+        )
+    lineas.append("")
+    lineas.extend(bloque_validacion_efectos())
+    return "\n".join(lineas) + "\n"
+
+
+def bloque_validacion_efectos():
+    return [
+        "-- ============================================================================",
+        "-- Autovalidacion de la fase",
+        "-- ============================================================================",
+        "DO $$",
+        "DECLARE",
+        "\tv_filas INTEGER;",
+        "BEGIN",
+        "\tSELECT count(*) INTO v_filas FROM EFECTO_SECUNDARIO_PACIENTE;",
+        "\tIF v_filas < 20 THEN",
+        "\t\tRAISE EXCEPTION 'Se esperaban al menos 20 efectos secundarios y hay %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas",
+        "\tFROM EFECTO_SECUNDARIO_PACIENTE e",
+        "\tJOIN PRESCRIBE p ON p.ID_PRESCRIPCION = e.ID_PRESCRIPCION",
+        "\tWHERE p.F_INICIO IS NULL OR p.F_FIN IS NULL",
+        "\t   OR e.FECHA < p.F_INICIO OR e.FECHA > p.F_FIN;",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay efectos fuera del periodo de la prescripcion: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM EFECTO_SECUNDARIO_PACIENTE",
+        "\tWHERE GRAVEDAD NOT IN ('LEVE', 'MODERADO', 'GRAVE');",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay efectos con gravedad invalida: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM EFECTO_SECUNDARIO_PACIENTE",
+        "\tWHERE DESCRIPCION IS NULL OR trim(DESCRIPCION) = '';",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay efectos sin descripcion: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM (",
+        "\t\tSELECT ID_PRESCRIPCION FROM EFECTO_SECUNDARIO_PACIENTE",
+        "\t\tGROUP BY 1 HAVING count(*) > 1",
+        "\t) d;",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay prescripciones con mas de un efecto: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(DISTINCT i.ID_AREA) INTO v_filas",
+        "\tFROM EFECTO_SECUNDARIO_PACIENTE e",
+        "\tJOIN PRESCRIBE p ON p.ID_PRESCRIPCION = e.ID_PRESCRIPCION",
+        "\tJOIN INGRESO i ON i.NUMBER_INGRESO = p.NUMBER_INGRESO;",
+        "\tIF v_filas <> 10 THEN",
+        "\t\tRAISE EXCEPTION 'Los efectos no se reparten entre las 10 areas: %', v_filas;",
+        "\tEND IF;",
+        "",
+        "\tSELECT count(*) INTO v_filas FROM (",
+        "\t\tSELECT i.ID_AREA, count(*) AS efectos",
+        "\t\tFROM EFECTO_SECUNDARIO_PACIENTE e",
+        "\t\tJOIN PRESCRIBE p ON p.ID_PRESCRIPCION = e.ID_PRESCRIPCION",
+        "\t\tJOIN INGRESO i ON i.NUMBER_INGRESO = p.NUMBER_INGRESO",
+        "\t\tGROUP BY 1 HAVING count(*) < 2",
+        "\t) d;",
+        "\tIF v_filas > 0 THEN",
+        "\t\tRAISE EXCEPTION 'Hay areas con menos de 2 efectos: %', v_filas;",
+        "\tEND IF;",
+        "END;",
+        "$$;",
+    ]
+
+
+def resumen_efectos(efectos):
+    print(f"Efectos secundarios: {len(efectos)}")
+    for gravedad in GRAVEDADES:
+        print(
+            f"{gravedad}: "
+            f"{sum(1 for e in efectos if e['gravedad'] == gravedad)}"
+        )
+    print("Efectos por area:")
+    for area, cantidad in sorted(Counter(e["area"] for e in efectos).items()):
+        print(f"  area {area}: {cantidad}")
+
+
 def resumen(ingresos):
     print(f"Ingresos: {len(ingresos)}")
     print(f"Ocupaciones: {len(ingresos)}")
@@ -1097,7 +1847,7 @@ def resumen(ingresos):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Genera las fases 4 y 5 del OLTP.")
+    parser = argparse.ArgumentParser(description="Genera las fases 4 a 7 del OLTP.")
     parser.add_argument(
         "--out",
         default=str(Path(__file__).resolve().parent / "04_ingresos_ocupaciones.sql"),
@@ -1109,8 +1859,18 @@ def main():
         help="Archivo SQL de la Fase 5.",
     )
     parser.add_argument(
+        "--out-facturacion",
+        default=str(Path(__file__).resolve().parent / "06_facturacion.sql"),
+        help="Archivo SQL de la Fase 6.",
+    )
+    parser.add_argument(
+        "--out-efectos",
+        default=str(Path(__file__).resolve().parent / "07_efectos_secundarios.sql"),
+        help="Archivo SQL de la Fase 7.",
+    )
+    parser.add_argument(
         "--solo-fase",
-        choices=("4", "5"),
+        choices=("4", "5", "6", "7"),
         help="Genera solo la fase indicada.",
     )
     args = parser.parse_args()
@@ -1123,12 +1883,28 @@ def main():
         resumen(ingresos)
         print(f"Archivo generado: {args.out}")
 
-    if args.solo_fase in (None, "5"):
+    if args.solo_fase in (None, "5", "6", "7"):
         servicios = construir_servicios(ingresos)
-        sql_servicios = renderizar_servicios(servicios)
-        Path(args.out_servicios).write_text(sql_servicios, encoding="utf-8")
-        resumen_servicios(servicios)
-        print(f"Archivo generado: {args.out_servicios}")
+
+        if args.solo_fase in (None, "5"):
+            sql_servicios = renderizar_servicios(servicios)
+            Path(args.out_servicios).write_text(sql_servicios, encoding="utf-8")
+            resumen_servicios(servicios)
+            print(f"Archivo generado: {args.out_servicios}")
+
+        if args.solo_fase in (None, "6"):
+            facturas = construir_facturas(servicios)
+            sql_facturacion = renderizar_facturacion(facturas)
+            Path(args.out_facturacion).write_text(sql_facturacion, encoding="utf-8")
+            resumen_facturacion(facturas)
+            print(f"Archivo generado: {args.out_facturacion}")
+
+        if args.solo_fase in (None, "7"):
+            efectos = construir_efectos(servicios)
+            sql_efectos = renderizar_efectos(efectos)
+            Path(args.out_efectos).write_text(sql_efectos, encoding="utf-8")
+            resumen_efectos(efectos)
+            print(f"Archivo generado: {args.out_efectos}")
 
 
 if __name__ == "__main__":
