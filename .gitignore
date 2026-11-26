@@ -1,0 +1,29 @@
+# Pentaho Data Integration (PDI / Spoon)
+.kettle/
+kettle.properties
+shared.xml
+*.log
+*.tmp
+*.bak
+
+# Variables de entorno y credenciales
+.env
+.env.local
+
+# Python (generador de datos y scripts auxiliares)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Paquetes de entrega comprimidos (evita subir archivos pesados)
+*.zip
+*.rar
+*.7z
+
+# Sistema operativo y editores
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
