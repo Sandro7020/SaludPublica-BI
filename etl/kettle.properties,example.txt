@@ -1,0 +1,11 @@
+OLTP_HOST=localhost
+OLTP_PORT=5432
+OLTP_DB=sanasalud_bi_oltp
+OLTP_USER=postgres
+OLTP_PASS=tu_clave_local
+
+DW_HOST=localhost
+DW_PORT=5432
+DW_DB=sanasalud_bi_dw
+DW_USER=postgres
+DW_PASS=tu_clave_local
